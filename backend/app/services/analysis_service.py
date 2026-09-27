@@ -25,9 +25,11 @@ from app.services.images.exif import extract_exif
 from app.services.images.processing import prepare_for_vision
 from app.services.images.validation import inspect_and_validate
 from app.services.pipeline.candidate_generation import CandidateGenerator
+from app.services.pipeline.geocoding import GeocodingStage
 from app.services.pipeline.persistence import clues_to_rows
 from app.services.pipeline.vision_analysis import VisionAnalyzer
-from app.services.providers.registry import get_ai_provider
+from app.services.providers.base import MapProvider
+from app.services.providers.registry import get_ai_provider, get_map_provider
 from app.services.storage.registry import get_storage
 
 log = get_logger(__name__)
@@ -202,6 +204,25 @@ class AnalysisService:
             "candidate_stage_complete",
             analysis_id=str(loaded.id),
             candidate_count=len(candidates),
+        )
+        return loaded
+
+    async def run_geocoding_stage(
+        self, analysis: Analysis, *, map_provider: MapProvider | None = None
+    ) -> Analysis:
+        """Stage 3: resolve named candidates to real coordinates (spec §7)."""
+        loaded = await self.repo.get_with_relations(analysis.id)
+        if loaded is None:
+            raise NotFoundError("Analysis not found.")
+
+        provider = map_provider or get_map_provider()
+        await GeocodingStage(self.session, provider).resolve(list(loaded.candidates))
+        await self.session.flush()
+
+        log.info(
+            "geocoding_stage_complete",
+            analysis_id=str(loaded.id),
+            located=sum(1 for c in loaded.candidates if c.latitude is not None),
         )
         return loaded
 
