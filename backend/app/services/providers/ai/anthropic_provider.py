@@ -1,18 +1,19 @@
 """Anthropic (Claude) vision provider.
 
-The default AI provider. This class owns *how* we talk to Anthropic; the rest
-of the app depends only on :class:`AIVisionProvider`.
+The default AI provider. Owns *how* we talk to Anthropic; the rest of the app
+depends only on :class:`AIVisionProvider`.
 
-NOTE (integration point — Phase 4): the concrete vision call is implemented in
-the AI-analysis phase, after confirming the current Messages API + vision
-payload against official docs (spec §45). Until then ``analyze_image`` raises a
-clear, honest error rather than returning fabricated results (spec §44). Config
-detection and health already work so the app boots and reports status.
+The image is sent as a base64 content block placed *before* the trusted text
+instruction (per the current Messages API vision shape). Any text inside the
+image is untrusted data — the injection boundary is enforced by the system
+prompt built in the pipeline (spec §24), not here.
 """
 
 from __future__ import annotations
 
-from app.core.errors import ProviderNotConfiguredError
+import base64
+
+from app.core.errors import ProviderNotConfiguredError, ProviderUnavailableError
 from app.services.providers.base import AIVisionProvider, VisionResult
 
 
@@ -22,10 +23,18 @@ class AnthropicVisionProvider(AIVisionProvider):
     def __init__(self, *, api_key: str | None, model: str) -> None:
         self._api_key = api_key
         self._model = model
+        self._client = None  # lazily created AsyncAnthropic
 
     @property
     def configured(self) -> bool:
         return bool(self._api_key)
+
+    def _get_client(self):
+        if self._client is None:
+            import anthropic
+
+            self._client = anthropic.AsyncAnthropic(api_key=self._api_key)
+        return self._client
 
     async def analyze_image(
         self,
@@ -40,13 +49,47 @@ class AnthropicVisionProvider(AIVisionProvider):
             raise ProviderNotConfiguredError(
                 "Anthropic AI provider is not configured. Set AI_API_KEY.",
             )
-        # Implemented in Phase 4 (image analysis). See module docstring.
-        raise NotImplementedError(
-            "AnthropicVisionProvider.analyze_image is wired in Phase 4 "
-            "(vision Messages API call)."
+
+        b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+        client = self._get_client()
+        try:
+            message = await client.messages.create(
+                model=self._model,
+                max_tokens=max_output_tokens or 2048,
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": b64,
+                                },
+                            },
+                            {"type": "text", "text": instruction},
+                        ],
+                    }
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001 - normalise SDK/network errors
+            raise ProviderUnavailableError(
+                f"Anthropic vision request failed: {type(exc).__name__}"
+            ) from exc
+
+        text = "".join(
+            block.text for block in message.content if getattr(block, "type", None) == "text"
+        )
+        return VisionResult(
+            provider=self.name,
+            model=self._model,
+            content=text,
+            input_tokens=getattr(message.usage, "input_tokens", None),
+            output_tokens=getattr(message.usage, "output_tokens", None),
         )
 
     async def health(self) -> bool:
-        # A configured key is the cheap health signal; a live ping is added when
-        # the call is implemented.
+        # A configured key is the cheap health signal; a live ping would add cost.
         return self.configured

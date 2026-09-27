@@ -14,13 +14,18 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import NotFoundError
+from app.core.errors import AppError, NotFoundError
 from app.core.logging import get_logger
 from app.models.analysis import Analysis
 from app.models.enums import AnalysisMode, AnalysisStatus
 from app.models.image import UploadedImage
+from app.models.system import ApiUsage
 from app.repositories.analysis import AnalysisRepository
+from app.services.images.processing import prepare_for_vision
 from app.services.images.validation import inspect_and_validate
+from app.services.pipeline.persistence import clues_to_rows
+from app.services.pipeline.vision_analysis import VisionAnalyzer
+from app.services.providers.registry import get_ai_provider
 from app.services.storage.registry import get_storage
 
 log = get_logger(__name__)
@@ -96,6 +101,61 @@ class AnalysisService:
             mime=inspected.mime_type,
             bytes=inspected.byte_size,
             dims=f"{inspected.width}x{inspected.height}",
+        )
+        return analysis
+
+    async def run_vision_stage(
+        self, analysis: Analysis, *, analyzer: VisionAnalyzer | None = None
+    ) -> Analysis:
+        """Stage 1 of the pipeline: extract structured visual clues (spec §7).
+
+        Loads the stored image, downsizes it for cost control, calls the vision
+        provider, and persists the resulting clue rows + API-usage record. On
+        failure the analysis is marked ``failed`` with a structured error rather
+        than raising into the caller.
+        """
+        if analysis.image is None:
+            raise NotFoundError("Analysis has no image to analyze.")
+
+        analyzer = analyzer or VisionAnalyzer(get_ai_provider())
+        analysis.status = AnalysisStatus.PROCESSING
+        await self.session.flush()
+
+        try:
+            data = await self.storage.load(analysis.image.storage_key)
+            vision_img = prepare_for_vision(data, source_mime=analysis.image.mime_type)
+            extraction = await analyzer.extract_clues(
+                image_bytes=vision_img.data,
+                media_type=vision_img.media_type,
+                hint=analysis.hint,
+            )
+        except AppError as exc:
+            analysis.status = AnalysisStatus.FAILED
+            analysis.error_code = exc.code
+            analysis.error_message = exc.message
+            await self.session.flush()
+            log.warning("vision_stage_failed", analysis_id=str(analysis.id), code=exc.code)
+            return analysis
+
+        rows = clues_to_rows(analysis.id, extraction.clues)
+        for row in rows:
+            self.session.add(row)
+        self.session.add(
+            ApiUsage(
+                analysis_id=analysis.id,
+                provider=extraction.provider,
+                operation="vision_analysis",
+                model=extraction.model,
+                input_tokens=extraction.input_tokens,
+                output_tokens=extraction.output_tokens,
+            )
+        )
+        await self.session.flush()
+
+        log.info(
+            "vision_stage_complete",
+            analysis_id=str(analysis.id),
+            clue_count=len(rows),
         )
         return analysis
 
