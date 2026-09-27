@@ -1,12 +1,6 @@
 import { ThemeToggle } from "@/components/theme-toggle";
-import {
-  MapPin,
-  ScanSearch,
-  ShieldCheck,
-  Layers,
-  Camera,
-  Upload,
-} from "lucide-react";
+import { ImageUploader } from "@/components/image-uploader";
+import { MapPin, ScanSearch, ShieldCheck, Layers } from "lucide-react";
 
 const steps = [
   { icon: ScanSearch, label: "Extract visual clues" },
@@ -49,44 +43,9 @@ export default function Home() {
             location — and show you exactly why.
           </p>
 
-          {/* Upload CTA (full uploader arrives in Phase 3) */}
-          <div className="mt-10 w-full max-w-xl">
-            <div
-              className="group flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border bg-card px-6 py-12 text-card-foreground transition-colors hover:border-ring"
-              role="button"
-              tabIndex={0}
-              aria-label="Upload an image to analyze"
-            >
-              <span className="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                <Upload className="h-6 w-6" aria-hidden />
-              </span>
-              <div>
-                <p className="font-medium">Drag &amp; drop an image here</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  or browse, paste, or use your camera — JPG, PNG, WEBP, HEIC
-                </p>
-              </div>
-              <div className="mt-2 flex items-center gap-3">
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Upload className="h-4 w-4" aria-hidden />
-                  Browse files
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Camera className="h-4 w-4" aria-hidden />
-                  Camera
-                </button>
-              </div>
-            </div>
-            <p className="mt-3 text-center text-xs text-muted-foreground">
-              Your photo is processed privately and deleted automatically. We
-              never present an uncertain guess as an exact location.
-            </p>
+          {/* Upload + analyze */}
+          <div className="mt-10 flex w-full justify-center">
+            <ImageUploader />
           </div>
         </section>
 
