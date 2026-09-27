@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.models.analysis import Analysis
+from app.models.candidate import Candidate
 from app.models.enums import AnalysisStatus
 from app.models.image import UploadedImage
 from app.repositories.base import BaseRepository
@@ -23,7 +24,8 @@ class AnalysisRepository(BaseRepository[Analysis]):
             .options(
                 selectinload(Analysis.image).selectinload(UploadedImage.exif),
                 selectinload(Analysis.clues),
-                selectinload(Analysis.candidates),
+                selectinload(Analysis.candidates).selectinload(Candidate.evidence),
+                selectinload(Analysis.final_location),
             )
         )
         return result.scalar_one_or_none()

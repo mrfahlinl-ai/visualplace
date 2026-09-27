@@ -73,6 +73,8 @@ class Analysis(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan"
     )
     candidates: Mapped[list[Candidate]] = relationship(
-        back_populates="analysis", cascade="all, delete-orphan"
+        back_populates="analysis",
+        cascade="all, delete-orphan",
+        order_by="Candidate.rank",
     )
     final_location: Mapped[Location | None] = relationship(foreign_keys=[final_location_id])

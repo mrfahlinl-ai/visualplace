@@ -7,7 +7,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import AnalysisMode, AnalysisStatus, ConfidenceBand
+from app.models.enums import (
+    AnalysisMode,
+    AnalysisStatus,
+    CandidateSource,
+    ConfidenceBand,
+    EvidenceCategory,
+    EvidenceKind,
+)
 
 
 class ExifRead(BaseModel):
@@ -39,6 +46,33 @@ class AnalysisError(BaseModel):
     message: str
 
 
+class EvidenceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    category: EvidenceCategory
+    kind: EvidenceKind
+    description: str
+    weight: float | None = None
+
+
+class CandidateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    latitude: float | None = None
+    longitude: float | None = None
+    city: str | None = None
+    country: str | None = None
+    country_code: str | None = None
+    place_type: str | None = None
+    source: CandidateSource
+    score: float
+    rank: int | None = None
+    radius_m: float | None = None
+    evidence: list[EvidenceRead] = Field(default_factory=list)
+
+
 class AnalysisRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -50,6 +84,7 @@ class AnalysisRead(BaseModel):
     confidence_band: ConfidenceBand | None = None
     created_at: datetime
     image: ImageRead | None = None
+    candidates: list[CandidateRead] = Field(default_factory=list)
     error: AnalysisError | None = None
 
 

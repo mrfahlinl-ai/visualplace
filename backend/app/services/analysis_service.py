@@ -24,6 +24,7 @@ from app.repositories.analysis import AnalysisRepository
 from app.services.images.exif import extract_exif
 from app.services.images.processing import prepare_for_vision
 from app.services.images.validation import inspect_and_validate
+from app.services.pipeline.candidate_generation import CandidateGenerator
 from app.services.pipeline.persistence import clues_to_rows
 from app.services.pipeline.vision_analysis import VisionAnalyzer
 from app.services.providers.registry import get_ai_provider
@@ -120,7 +121,11 @@ class AnalysisService:
             dims=f"{inspected.width}x{inspected.height}",
             has_gps=exif.has_gps,
         )
-        return analysis
+        # Reload with relations so the response serializes without triggering
+        # async lazy-loads (empty clues/candidates included explicitly).
+        reloaded = await self.repo.get_with_relations(analysis.id)
+        assert reloaded is not None
+        return reloaded
 
     async def run_vision_stage(
         self, analysis: Analysis, *, analyzer: VisionAnalyzer | None = None
@@ -176,6 +181,29 @@ class AnalysisService:
             clue_count=len(rows),
         )
         return analysis
+
+    async def run_candidate_stage(self, analysis: Analysis) -> Analysis:
+        """Stage 2: generate scored candidate locations from the evidence (spec §12).
+
+        Reloads relations so freshly-persisted clues/EXIF are visible, then
+        persists candidates with their evidence.
+        """
+        loaded = await self.repo.get_with_relations(analysis.id)
+        if loaded is None:
+            raise NotFoundError("Analysis not found.")
+
+        candidates = CandidateGenerator().generate(loaded)
+        for cand in candidates:
+            cand.analysis_id = loaded.id
+            self.session.add(cand)
+        await self.session.flush()
+
+        log.info(
+            "candidate_stage_complete",
+            analysis_id=str(loaded.id),
+            candidate_count=len(candidates),
+        )
+        return loaded
 
     async def get(self, analysis_id: uuid.UUID) -> Analysis:
         analysis = await self.repo.get_with_relations(analysis_id)
