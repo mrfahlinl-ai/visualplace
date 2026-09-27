@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.analysis import Analysis
 from app.models.enums import AnalysisStatus
+from app.models.image import UploadedImage
 from app.repositories.base import BaseRepository
 
 
@@ -20,7 +21,7 @@ class AnalysisRepository(BaseRepository[Analysis]):
             select(Analysis)
             .where(Analysis.id == id_)
             .options(
-                selectinload(Analysis.image),
+                selectinload(Analysis.image).selectinload(UploadedImage.exif),
                 selectinload(Analysis.clues),
                 selectinload(Analysis.candidates),
             )

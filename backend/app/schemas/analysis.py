@@ -10,6 +10,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import AnalysisMode, AnalysisStatus, ConfidenceBand
 
 
+class ExifRead(BaseModel):
+    """EXIF summary surfaced to the UI (spec §9). Never claims GPS it doesn't have."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    has_gps: bool
+    gps_valid: bool | None = None
+    gps_latitude: float | None = None
+    gps_longitude: float | None = None
+    captured_at: datetime | None = None
+    camera_make: str | None = None
+    camera_model: str | None = None
+
+
 class ImageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -17,6 +31,7 @@ class ImageRead(BaseModel):
     byte_size: int
     width: int | None = None
     height: int | None = None
+    exif: ExifRead | None = None
 
 
 class AnalysisError(BaseModel):

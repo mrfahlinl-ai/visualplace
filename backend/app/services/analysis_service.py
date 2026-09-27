@@ -18,9 +18,10 @@ from app.core.errors import AppError, NotFoundError
 from app.core.logging import get_logger
 from app.models.analysis import Analysis
 from app.models.enums import AnalysisMode, AnalysisStatus
-from app.models.image import UploadedImage
+from app.models.image import ImageMetadata, UploadedImage
 from app.models.system import ApiUsage
 from app.repositories.analysis import AnalysisRepository
+from app.services.images.exif import extract_exif
 from app.services.images.processing import prepare_for_vision
 from app.services.images.validation import inspect_and_validate
 from app.services.pipeline.persistence import clues_to_rows
@@ -91,7 +92,23 @@ class AnalysisService:
         )
         await self.session.flush()
 
-        # 3) Persist the binary to storage.
+        # 3) Inspect EXIF metadata BEFORE any AI inference (spec §9).
+        exif = extract_exif(data)
+        analysis.image.exif = ImageMetadata(
+            image_id=analysis.image.id,
+            has_gps=exif.has_gps,
+            gps_latitude=exif.gps_latitude,
+            gps_longitude=exif.gps_longitude,
+            gps_valid=exif.gps_valid,
+            captured_at=exif.captured_at,
+            camera_make=exif.camera_make,
+            camera_model=exif.camera_model,
+            software=exif.software,
+            orientation=exif.orientation,
+        )
+        await self.session.flush()
+
+        # 4) Persist the binary to storage.
         await self.storage.save(key, data, content_type=inspected.mime_type)
 
         log.info(
@@ -101,6 +118,7 @@ class AnalysisService:
             mime=inspected.mime_type,
             bytes=inspected.byte_size,
             dims=f"{inspected.width}x{inspected.height}",
+            has_gps=exif.has_gps,
         )
         return analysis
 

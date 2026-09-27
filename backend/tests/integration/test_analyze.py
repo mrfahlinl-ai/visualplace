@@ -75,6 +75,9 @@ async def test_upload_creates_analysis(client: AsyncClient) -> None:
     assert body["mode"] == "find_exact"
     assert body["image"]["mime_type"] == "image/png"
     assert body["image"]["width"] == 64 and body["image"]["height"] == 48
+    # EXIF is inspected on upload; a generated PNG has no GPS (never claimed).
+    assert body["image"]["exif"] is not None
+    assert body["image"]["exif"]["has_gps"] is False
 
     # Fetch it back.
     got = await client.get(f"{settings.api_prefix}/analyze/{body['id']}")
