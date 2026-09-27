@@ -14,7 +14,7 @@ async def test_health_ok(client: AsyncClient) -> None:
     assert body["status"] in {"ok", "degraded"}
     assert body["version"]
     names = {c["name"] for c in body["components"]}
-    assert names == {"ai", "map", "search"}
+    assert names == {"database", "ai", "map", "search"}
 
 
 async def test_unknown_route_returns_error_envelope(client: AsyncClient) -> None:
