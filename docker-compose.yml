@@ -1,6 +1,6 @@
 # Local development stack for VisualPlace.
 # Usage: cp .env.example .env && docker compose up --build
-# Production config is kept separate (docker/ + your orchestrator of choice).
+# For production, layer the override: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 services:
   db:
@@ -37,6 +37,8 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://visualplace:visualplace@db:5432/visualplace
       REDIS_URL: redis://redis:6379/0
+    volumes:
+      - uploads_data:/app/var/uploads
     ports:
       - "8000:8000"
     depends_on:
@@ -49,8 +51,8 @@ services:
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
     depends_on:
@@ -58,3 +60,4 @@ services:
 
 volumes:
   db_data:
+  uploads_data:

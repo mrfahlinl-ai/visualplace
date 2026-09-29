@@ -100,16 +100,18 @@ Secrets (AI/map/search keys, DB URL) are **server-side only**; only
 
 Built in phases (see [`docs/`](docs/)):
 
-1. ✅ **Architecture + project initialization** ← current
-2. Database + backend foundation
-3. Image upload system
-4. AI image analysis
-5. OCR + EXIF
-6. Candidate generation
-7. Maps + place search
-8. Candidate verification
-9. Result UI
-10. Security · 11. Testing · 12. Performance · 13. Production deployment
+1. ✅ Architecture + project initialization
+2. ✅ Database + backend foundation
+3. ✅ Image upload system
+4. ✅ AI image analysis
+5. ✅ EXIF + OCR
+6. ✅ Candidate generation
+7. ✅ Maps + place search
+8. ✅ Candidate verification + finalize
+9. ✅ Result UI
+10. ✅ Security · 11. ✅ Testing · 12. ✅ Performance · 13. ✅ Deployment (Docker)
+
+**Deployment:** see [`docs/DEPLOY.md`](docs/DEPLOY.md) (Docker Compose).
 
 ## Principles
 

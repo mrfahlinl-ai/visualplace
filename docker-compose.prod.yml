@@ -1,0 +1,37 @@
+# Production override for VisualPlace.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Differences from dev:
+# - Datastores are NOT published to the host (only backend/frontend ports).
+# - Everything restarts unless explicitly stopped.
+# - Postgres credentials come from the environment, not hard-coded defaults.
+
+services:
+  db:
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-visualplace}
+    ports: []
+
+  redis:
+    restart: unless-stopped
+    ports: []
+
+  backend:
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_JSON: "true"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-visualplace}
+      REDIS_URL: redis://redis:6379/0
+    # Bind only to localhost; put a reverse proxy / tunnel in front.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  frontend:
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
