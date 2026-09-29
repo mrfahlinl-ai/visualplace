@@ -12,12 +12,21 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import settings
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug and not settings.is_production,
-    pool_pre_ping=True,
-    future=True,
-)
+
+def _engine_kwargs() -> dict:
+    kwargs: dict = {
+        "echo": settings.debug and not settings.is_production,
+        "pool_pre_ping": True,
+        "future": True,
+    }
+    # SQLite (tests/dev) doesn't take pool sizing args.
+    if not settings.database_url.startswith("sqlite"):
+        kwargs["pool_size"] = settings.db_pool_size
+        kwargs["max_overflow"] = settings.db_max_overflow
+    return kwargs
+
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs())
 
 SessionFactory = async_sessionmaker(
     bind=engine,

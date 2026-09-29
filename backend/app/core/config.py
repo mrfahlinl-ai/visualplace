@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     # --- Datastores ---
     database_url: str = "postgresql+asyncpg://visualplace:visualplace@localhost:5432/visualplace"
     redis_url: str = "redis://localhost:6379/0"
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
 
     # --- AI provider (vision) ---
     ai_provider: AIProviderName = AIProviderName.ANTHROPIC
