@@ -3,6 +3,7 @@
 [![Repo](https://img.shields.io/badge/GitHub-visualplace-181717?logo=github)](https://github.com/mrfahlinl-ai/visualplace)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python%203.12-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
 **Find where a photo was taken.** VisualPlace is an evidence-based AI visual
 geolocation tool. Instead of asking a model "where is this?" and trusting the
