@@ -17,6 +17,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.core.security import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 
 log = get_logger(__name__)
 
@@ -33,6 +34,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         map_provider=settings.map_provider.value,
         search_provider=settings.search_provider.value,
     )
+    if settings.is_production and settings.secret_key == "dev-insecure-change-me":  # noqa: S105
+        log.error("insecure_secret_key", detail="SECRET_KEY must be overridden in production")
     yield
     log.info("shutdown")
 
@@ -47,13 +50,16 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.add_middleware(
-        CORSMiddleware,
+    # Order matters: last added runs first. Body-size guard first, then security
+    # headers, then CORS.
+    app.add_middleware(CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.max_request_bytes)
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_prefix)

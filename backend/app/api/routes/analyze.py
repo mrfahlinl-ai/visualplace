@@ -12,17 +12,23 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import ImageTooLargeError
 from app.core.ratelimit import RateLimiter
+from app.core.security import hash_ip
 from app.db.session import get_session
 from app.models.enums import AnalysisMode
 from app.schemas.analysis import AnalysisError, AnalysisRead
 from app.services.analysis_service import AnalysisService
+from app.services.audit import record_audit
 from app.services.pipeline.explanation import build_explanation
+
+
+def _ip_hash(request: Request) -> str | None:
+    return hash_ip(request.client.host if request.client else None)
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
@@ -48,6 +54,7 @@ def _to_read(analysis) -> AnalysisRead:
     summary="Create an analysis from an uploaded image",
 )
 async def create_analysis(
+    request: Request,
     file: UploadFile = File(..., description="Image to analyze"),
     mode: AnalysisMode = Form(AnalysisMode.IDENTIFY),
     hint: str | None = Form(None, max_length=280),
@@ -66,6 +73,14 @@ async def create_analysis(
         mode=mode,
         hint=hint,
     )
+    await record_audit(
+        session,
+        action="analysis.create",
+        entity_type="analysis",
+        entity_id=analysis.id,
+        analysis_id=analysis.id,
+        ip_hash=_ip_hash(request),
+    )
     return _to_read(analysis)
 
 
@@ -76,12 +91,22 @@ async def create_analysis(
 )
 async def verify_analysis(
     analysis_id: uuid.UUID,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     _rl: None = Depends(_verify_limiter),
 ) -> AnalysisRead:
     service = AnalysisService(session)
     analysis = await service.get(analysis_id)
     result = await service.run_full_pipeline(analysis)
+    await record_audit(
+        session,
+        action="analysis.verify",
+        entity_type="analysis",
+        entity_id=analysis_id,
+        analysis_id=analysis_id,
+        ip_hash=_ip_hash(request),
+        extra={"status": result.status.value},
+    )
     return _to_read(result)
 
 
@@ -101,6 +126,15 @@ async def get_analysis(
 )
 async def delete_analysis(
     analysis_id: uuid.UUID,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> None:
     await AnalysisService(session).delete(analysis_id)
+    await record_audit(
+        session,
+        action="analysis.delete",
+        entity_type="analysis",
+        entity_id=analysis_id,
+        analysis_id=analysis_id,
+        ip_hash=_ip_hash(request),
+    )

@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = True  # structured JSON logs; set False for pretty dev logs
 
+    # Server-side secret. Used to hash IPs for audit logs (never stored raw).
+    # MUST be overridden in production.
+    secret_key: str = "dev-insecure-change-me"  # noqa: S105 - dev default, override in prod
+    # Hard cap on request body size (bytes); a global guard above the upload cap.
+    max_request_bytes: int = 20 * 1024 * 1024
+
     # CORS: comma-separated origins allowed to call the API.
     cors_origins: str = "http://localhost:3000"
 
