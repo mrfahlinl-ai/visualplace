@@ -1,9 +1,10 @@
 """Analysis orchestration service.
 
-Phase 3 scope: create an analysis from an uploaded image (validate → store →
-persist), fetch it, and delete it (privacy). The evidence pipeline (AI, EXIF,
-OCR, candidates, scoring) is layered on in later phases and will advance the
-analysis ``status`` from ``pending``.
+Owns the analysis lifecycle: create from an uploaded image (validate → store →
+EXIF → persist), fetch, privacy delete, and the evidence pipeline stages —
+vision → candidates → geocoding → verify/finalize — plus a `run_full_pipeline`
+convenience that chains them. Stages accept injectable providers so they run in
+tests without network or API keys.
 """
 
 from __future__ import annotations
@@ -17,8 +18,9 @@ from app.core.config import settings
 from app.core.errors import AppError, NotFoundError
 from app.core.logging import get_logger
 from app.models.analysis import Analysis
-from app.models.enums import AnalysisMode, AnalysisStatus
+from app.models.enums import AnalysisMode, AnalysisStatus, CandidateSource, ConfidenceBand
 from app.models.image import ImageMetadata, UploadedImage
+from app.models.location import Location
 from app.models.system import ApiUsage
 from app.repositories.analysis import AnalysisRepository
 from app.services.images.exif import extract_exif
@@ -27,12 +29,21 @@ from app.services.images.validation import inspect_and_validate
 from app.services.pipeline.candidate_generation import CandidateGenerator
 from app.services.pipeline.geocoding import GeocodingStage
 from app.services.pipeline.persistence import clues_to_rows
+from app.services.pipeline.scoring import confidence_band, score_candidate
+from app.services.pipeline.verification import Verifier
 from app.services.pipeline.vision_analysis import VisionAnalyzer
 from app.services.providers.base import MapProvider
 from app.services.providers.registry import get_ai_provider, get_map_provider
 from app.services.storage.registry import get_storage
 
 log = get_logger(__name__)
+
+# Approximate-area radius (metres) by band when the location is uncertain (§17).
+_BAND_RADIUS_M: dict[ConfidenceBand, float] = {
+    ConfidenceBand.PROBABLE: 5_000,
+    ConfidenceBand.APPROXIMATE: 25_000,
+    ConfidenceBand.WEAK: 100_000,
+}
 
 
 def _storage_key(analysis_id: uuid.UUID, mime_type: str) -> str:
@@ -163,8 +174,10 @@ class AnalysisService:
             return analysis
 
         rows = clues_to_rows(analysis.id, extraction.clues)
+        # Append to the relationship so the in-memory collection stays consistent
+        # with the DB (a later reload would otherwise keep a stale empty list).
         for row in rows:
-            self.session.add(row)
+            analysis.clues.append(row)
         self.session.add(
             ApiUsage(
                 analysis_id=analysis.id,
@@ -196,8 +209,7 @@ class AnalysisService:
 
         candidates = CandidateGenerator().generate(loaded)
         for cand in candidates:
-            cand.analysis_id = loaded.id
-            self.session.add(cand)
+            loaded.candidates.append(cand)  # keeps the collection consistent
         await self.session.flush()
 
         log.info(
@@ -225,6 +237,84 @@ class AnalysisService:
             located=sum(1 for c in loaded.candidates if c.latitude is not None),
         )
         return loaded
+
+    async def _ensure_location(self, candidate) -> Location | None:
+        """Return the candidate's Location, creating one from its coords if needed."""
+        if candidate.location_id is not None:
+            return await self.session.get(Location, candidate.location_id)
+        if candidate.latitude is None or candidate.longitude is None:
+            return None
+        loc = Location(
+            name=candidate.name,
+            latitude=candidate.latitude,
+            longitude=candidate.longitude,
+            city=candidate.city,
+            country=candidate.country,
+            country_code=candidate.country_code,
+            place_type=candidate.place_type,
+            provider=candidate.source.value,
+        )
+        self.session.add(loc)
+        await self.session.flush()
+        candidate.location_id = loc.id
+        return loc
+
+    async def run_finalize_stage(self, analysis: Analysis) -> Analysis:
+        """Stage 4: verify, re-score, pick the result, set confidence (spec §13/§14/§33).
+
+        Comfortable with "unable to determine": a below-threshold top score yields
+        band UNKNOWN and no final location — never a misleading pin (spec §17/§33).
+        """
+        loaded = await self.repo.get_with_relations(analysis.id)
+        if loaded is None:
+            raise NotFoundError("Analysis not found.")
+
+        Verifier().verify(loaded)
+        for cand in loaded.candidates:
+            cand.score = score_candidate(cand)
+        ranked = sorted(loaded.candidates, key=lambda c: c.score, reverse=True)
+        for i, cand in enumerate(ranked, start=1):
+            cand.rank = i
+
+        top = ranked[0] if ranked else None
+        if top is None or top.score < 0.15:
+            loaded.confidence = top.score if top else 0.0
+            loaded.confidence_band = ConfidenceBand.UNKNOWN
+            loaded.final_location_id = None
+        else:
+            band = confidence_band(
+                top.score, has_exif_gps=(top.source == CandidateSource.EXIF)
+            )
+            loaded.confidence = top.score
+            loaded.confidence_band = band
+            top.radius_m = _BAND_RADIUS_M.get(band)
+            location = await self._ensure_location(top)
+            loaded.final_location_id = location.id if location else None
+
+        loaded.status = AnalysisStatus.COMPLETED
+        await self.session.flush()
+        log.info(
+            "finalize_complete",
+            analysis_id=str(loaded.id),
+            band=loaded.confidence_band.value if loaded.confidence_band else None,
+            confidence=round(loaded.confidence or 0.0, 3),
+        )
+        return loaded
+
+    async def run_full_pipeline(
+        self,
+        analysis: Analysis,
+        *,
+        analyzer: VisionAnalyzer | None = None,
+        map_provider: MapProvider | None = None,
+    ) -> Analysis:
+        """Run the whole evidence pipeline: vision → candidates → geocode → finalize."""
+        result = await self.run_vision_stage(analysis, analyzer=analyzer)
+        if result.status == AnalysisStatus.FAILED:
+            return result
+        await self.run_candidate_stage(analysis)
+        await self.run_geocoding_stage(analysis, map_provider=map_provider)
+        return await self.run_finalize_stage(analysis)
 
     async def get(self, analysis_id: uuid.UUID) -> Analysis:
         analysis = await self.repo.get_with_relations(analysis_id)

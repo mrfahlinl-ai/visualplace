@@ -22,10 +22,18 @@ from app.db.session import get_session
 from app.models.enums import AnalysisMode
 from app.schemas.analysis import AnalysisRead
 from app.services.analysis_service import AnalysisService
+from app.services.pipeline.explanation import build_explanation
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
 _upload_limiter = RateLimiter(scope="analyze")
+_verify_limiter = RateLimiter(scope="analyze_verify")
+
+
+def _to_read(analysis) -> AnalysisRead:
+    read = AnalysisRead.model_validate(analysis)
+    read.explanation = build_explanation(analysis)
+    return read
 
 
 @router.post(
@@ -53,7 +61,23 @@ async def create_analysis(
         mode=mode,
         hint=hint,
     )
-    return AnalysisRead.model_validate(analysis)
+    return _to_read(analysis)
+
+
+@router.post(
+    "/{analysis_id}/verify",
+    response_model=AnalysisRead,
+    summary="Run the evidence pipeline for an analysis",
+)
+async def verify_analysis(
+    analysis_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _rl: None = Depends(_verify_limiter),
+) -> AnalysisRead:
+    service = AnalysisService(session)
+    analysis = await service.get(analysis_id)
+    result = await service.run_full_pipeline(analysis)
+    return _to_read(result)
 
 
 @router.get("/{analysis_id}", response_model=AnalysisRead, summary="Get an analysis")
@@ -62,7 +86,7 @@ async def get_analysis(
     session: AsyncSession = Depends(get_session),
 ) -> AnalysisRead:
     analysis = await AnalysisService(session).get(analysis_id)
-    return AnalysisRead.model_validate(analysis)
+    return _to_read(analysis)
 
 
 @router.delete(

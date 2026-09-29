@@ -46,6 +46,21 @@ class AnalysisError(BaseModel):
     message: str
 
 
+class LocationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    latitude: float
+    longitude: float
+    address: str | None = None
+    city: str | None = None
+    country: str | None = None
+    country_code: str | None = None
+    place_type: str | None = None
+    website: str | None = None
+
+
 class EvidenceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -84,7 +99,9 @@ class AnalysisRead(BaseModel):
     confidence_band: ConfidenceBand | None = None
     created_at: datetime
     image: ImageRead | None = None
+    final_location: LocationRead | None = None
     candidates: list[CandidateRead] = Field(default_factory=list)
+    explanation: list[str] = Field(default_factory=list)
     error: AnalysisError | None = None
 
 
