@@ -20,7 +20,7 @@ from app.core.errors import ImageTooLargeError
 from app.core.ratelimit import RateLimiter
 from app.db.session import get_session
 from app.models.enums import AnalysisMode
-from app.schemas.analysis import AnalysisRead
+from app.schemas.analysis import AnalysisError, AnalysisRead
 from app.services.analysis_service import AnalysisService
 from app.services.pipeline.explanation import build_explanation
 
@@ -33,6 +33,11 @@ _verify_limiter = RateLimiter(scope="analyze_verify")
 def _to_read(analysis) -> AnalysisRead:
     read = AnalysisRead.model_validate(analysis)
     read.explanation = build_explanation(analysis)
+    if analysis.error_code:
+        read.error = AnalysisError(
+            code=analysis.error_code,
+            message=analysis.error_message or "Analysis failed.",
+        )
     return read
 
 

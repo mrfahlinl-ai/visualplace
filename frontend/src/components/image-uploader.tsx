@@ -1,19 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Camera,
-  ImageIcon,
-  Loader2,
-  MapPin,
-  ShieldCheck,
-  Sparkles,
-  Upload,
-  X,
-} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Camera, ImageIcon, Loader2, MapPin, Sparkles, Upload, X } from "lucide-react";
 import { createAnalysis } from "@/lib/api";
 import { ApiRequestError } from "@/lib/api";
-import type { AnalysisMode, AnalysisRead } from "@/lib/types";
+import type { AnalysisMode } from "@/lib/types";
 import {
   ACCEPT_ATTR,
   formatBytes,
@@ -29,16 +21,16 @@ interface Selected {
   height: number | null;
 }
 
-type Phase = "idle" | "ready" | "submitting" | "done" | "error";
+type Phase = "idle" | "ready" | "submitting" | "error";
 
 export function ImageUploader() {
+  const router = useRouter();
   const [selected, setSelected] = useState<Selected | null>(null);
   const [dragging, setDragging] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AnalysisMode>("identify");
   const [hint, setHint] = useState("");
-  const [result, setResult] = useState<AnalysisRead | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
@@ -49,7 +41,6 @@ export function ImageUploader() {
     });
     setPhase("idle");
     setError(null);
-    setResult(null);
   }, []);
 
   const accept = useCallback(async (file: File) => {
@@ -70,7 +61,6 @@ export function ImageUploader() {
       };
     });
     setError(null);
-    setResult(null);
     setPhase("ready");
   }, []);
 
@@ -111,8 +101,8 @@ export function ImageUploader() {
         mode,
         hint: hint.trim() || undefined,
       });
-      setResult(res);
-      setPhase("done");
+      // Hand off to the result page, which runs the pipeline and renders it.
+      router.push(`/result/${res.id}`);
     } catch (err) {
       const msg =
         err instanceof ApiRequestError
@@ -121,7 +111,7 @@ export function ImageUploader() {
       setError(msg);
       setPhase("error");
     }
-  }, [selected, mode, hint]);
+  }, [selected, mode, hint, router]);
 
   return (
     <div className="w-full max-w-xl">
@@ -240,8 +230,7 @@ export function ImageUploader() {
             ) : null}
           </div>
 
-          {phase !== "done" ? (
-            <div className="space-y-4 p-4">
+          <div className="space-y-4 p-4">
               {/* Mode */}
               <div className="grid grid-cols-2 gap-2">
                 {(
@@ -317,30 +306,6 @@ export function ImageUploader() {
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="space-y-3 p-4">
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm">
-                <ShieldCheck className="h-4 w-4 text-accent" aria-hidden />
-                <span>
-                  Image accepted and queued ·{" "}
-                  <span className="font-medium">{result?.status}</span>
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Analysis <code className="rounded bg-muted px-1">{result?.id.slice(0, 8)}</code>{" "}
-                created. The evidence pipeline (clues, candidates, verification,
-                scoring) runs in the upcoming phases and the result will appear here.
-              </p>
-              <button
-                type="button"
-                onClick={clear}
-                className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
-              >
-                <Upload className="h-4 w-4" aria-hidden />
-                Analyze another
-              </button>
-            </div>
-          )}
         </div>
       )}
 

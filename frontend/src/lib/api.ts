@@ -48,6 +48,14 @@ export async function getAnalysis(id: string): Promise<AnalysisRead> {
   return (await res.json()) as AnalysisRead;
 }
 
+export async function verifyAnalysis(id: string): Promise<AnalysisRead> {
+  const res = await fetch(`${config.apiBaseUrl}/api/analyze/${id}/verify`, {
+    method: "POST",
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as AnalysisRead;
+}
+
 export async function deleteAnalysis(id: string): Promise<void> {
   const res = await fetch(`${config.apiBaseUrl}/api/analyze/${id}`, {
     method: "DELETE",
